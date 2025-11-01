@@ -49,7 +49,7 @@ export default function CanvasWorkspace({
         });
         
         canvas.add(img);
-        canvas.sendToBack(img);
+        img.sendToBack();
       });
     }
 
