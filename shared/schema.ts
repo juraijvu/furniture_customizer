@@ -41,26 +41,43 @@ export const insertProjectImageSchema = createInsertSchema(projectImages).omit({
 export type InsertProjectImage = z.infer<typeof insertProjectImageSchema>;
 export type ProjectImage = typeof projectImages.$inferSelect;
 
-// Color regions table - stores canvas objects with applied colors
-export const colorRegions = pgTable("color_regions", {
+// Segmentation masks table - stores AI-detected furniture parts
+export const segmentationMasks = pgTable("segmentation_masks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  name: text("name").notNull(),
-  fabricObject: jsonb("fabric_object").notNull(), // Serialized Fabric.js object
-  fillHex: varchar("fill_hex", { length: 7 }).notNull(),
-  opacity: numeric("opacity").notNull().default('1'),
-  blendMode: varchar("blend_mode", { length: 16 }).notNull().default('normal'),
-  zIndex: integer("z_index").notNull().default(0),
+  imageId: varchar("image_id").notNull().references(() => projectImages.id, { onDelete: 'cascade' }),
+  clickX: integer("click_x").notNull(),
+  clickY: integer("click_y").notNull(),
+  maskData: text("mask_data").notNull(), // Base64 encoded mask PNG or compressed binary
+  boundingBox: jsonb("bounding_box").notNull(), // {x, y, width, height}
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-export const insertColorRegionSchema = createInsertSchema(colorRegions).omit({
+export const insertSegmentationMaskSchema = createInsertSchema(segmentationMasks).omit({
   id: true,
   createdAt: true,
 });
 
-export type InsertColorRegion = z.infer<typeof insertColorRegionSchema>;
-export type ColorRegion = typeof colorRegions.$inferSelect;
+export type InsertSegmentationMask = z.infer<typeof insertSegmentationMaskSchema>;
+export type SegmentationMask = typeof segmentationMasks.$inferSelect;
+
+// Color applications table - stores applied colors to segmented parts
+export const colorApplications = pgTable("color_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  maskId: varchar("mask_id").notNull().references(() => segmentationMasks.id, { onDelete: 'cascade' }),
+  fillHex: varchar("fill_hex", { length: 7 }).notNull(),
+  opacity: numeric("opacity").notNull().default('0.8'),
+  blendMode: varchar("blend_mode", { length: 16 }).notNull().default('multiply'),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const insertColorApplicationSchema = createInsertSchema(colorApplications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertColorApplication = z.infer<typeof insertColorApplicationSchema>;
+export type ColorApplication = typeof colorApplications.$inferSelect;
 
 // Recent colors table - stores user's recently used colors
 export const recentColors = pgTable("recent_colors", {
