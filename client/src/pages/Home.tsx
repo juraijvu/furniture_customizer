@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Header from "@/components/Header";
 import ColorPalette from "@/components/ColorPalette";
 import UploadZone from "@/components/UploadZone";
-import CanvasWorkspace from "@/components/CanvasWorkspace";
+import CanvasWorkspace, { type CanvasWorkspaceHandle } from "@/components/CanvasWorkspace";
 import PropertiesPanel from "@/components/PropertiesPanel";
 import ProjectGallery from "@/components/ProjectGallery";
 import type { ColorItem } from "@/data/colorPalette";
@@ -10,6 +10,7 @@ import sofaImage from '@assets/generated_images/Modern_grey_sofa_furniture_4bccc
 import chairImage from '@assets/generated_images/Beige_dining_chair_c4cca64b.png';
 import officeChairImage from '@assets/generated_images/Brown_office_chair_3fdc19ca.png';
 import tableImage from '@assets/generated_images/Round_wooden_side_table_c2d711ab.png';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function Home() {
   const [projectName, setProjectName] = useState("Untitled Project");
@@ -18,6 +19,11 @@ export default function Home() {
   const [recentColors, setRecentColors] = useState<ColorItem[]>([]);
   const [hasSelection, setHasSelection] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [opacity, setOpacity] = useState(70);
+  const [blendMode, setBlendMode] = useState("multiply");
+  const canvasRef = useRef<CanvasWorkspaceHandle>(null);
+  const queryClient = useQueryClient();
 
   const handleColorSelect = (color: ColorItem) => {
     setSelectedColor(color);
@@ -37,19 +43,127 @@ export default function Home() {
     reader.readAsDataURL(file);
   };
 
-  const handleDownload = () => {
-    console.log('Download image');
+  const { data: projects } = useQuery({
+    queryKey: ['/api/projects'],
+    queryFn: async () => {
+      const response = await fetch('/api/projects');
+      if (!response.ok) throw new Error('Failed to fetch projects');
+      return response.json();
+    }
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (projectData: { name: string; previewImageUrl?: string }) => {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(projectData)
+      });
+      if (!response.ok) throw new Error('Failed to create project');
+      return response.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/projects'] })
+  });
+
+  const saveCanvasMutation = useMutation({
+    mutationFn: async ({ projectId, canvasJson, zoom }: { projectId: string; canvasJson: any; zoom: number }) => {
+      const response = await fetch(`/api/projects/${projectId}/canvas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvasJson, zoom })
+      });
+      if (!response.ok) throw new Error('Failed to save canvas');
+      return response.json();
+    }
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete project');
+      return response.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/projects'] })
+  });
+
+  const loadProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      if (!response.ok) throw new Error('Failed to load project');
+      const data = await response.json();
+      
+      if (data.project) {
+        setProjectName(data.project.name);
+        setCurrentProjectId(data.project.id);
+        
+        if (data.project.previewImageUrl) {
+          setUploadedImage(data.project.previewImageUrl);
+        }
+        
+        if (data.canvasState?.canvasJson) {
+          setTimeout(() => {
+            canvasRef.current?.loadCanvasJSON(data.canvasState.canvasJson);
+          }, 100);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load project:', error);
+    }
   };
 
-  const handleSave = () => {
-    console.log('Save project to gallery');
+  const handleOpacityChange = (newOpacity: number) => {
+    setOpacity(newOpacity);
+    canvasRef.current?.setOpacity(newOpacity);
   };
 
-  const mockProjects = [
+  const handleBlendModeChange = (mode: string) => {
+    setBlendMode(mode);
+    canvasRef.current?.setBlendMode(mode);
+  };
+
+  const handleDownload = (filename: string, format: string, scale: number) => {
+    canvasRef.current?.downloadImage(filename, format, scale);
+  };
+
+  const handleSave = async () => {
+    if (!currentProjectId) {
+      const project = await createProjectMutation.mutateAsync({
+        name: projectName,
+        previewImageUrl: uploadedImage || undefined
+      });
+      setCurrentProjectId(project.id);
+      
+      const canvasJson = canvasRef.current?.getCanvasJSON();
+      if (canvasJson) {
+        await saveCanvasMutation.mutateAsync({
+          projectId: project.id,
+          canvasJson,
+          zoom: 1
+        });
+      }
+    } else {
+      const canvasJson = canvasRef.current?.getCanvasJSON();
+      if (canvasJson) {
+        await saveCanvasMutation.mutateAsync({
+          projectId: currentProjectId,
+          canvasJson,
+          zoom: 1
+        });
+      }
+    }
+  };
+
+  const galleryProjects = [
     { id: '1', name: 'Modern Grey Sofa', thumbnail: sofaImage, date: 'Nov 1, 2025' },
     { id: '2', name: 'Beige Dining Chair', thumbnail: chairImage, date: 'Oct 30, 2025' },
     { id: '3', name: 'Office Chair Design', thumbnail: officeChairImage, date: 'Oct 28, 2025' },
     { id: '4', name: 'Round Side Table', thumbnail: tableImage, date: 'Oct 27, 2025' },
+    ...(projects || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      thumbnail: p.previewImageUrl || sofaImage,
+      date: new Date(p.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    }))
   ];
 
   return (
@@ -72,9 +186,11 @@ export default function Home() {
         <div className="flex-1 flex flex-col min-w-0">
           {uploadedImage ? (
             <CanvasWorkspace 
+              ref={canvasRef}
               imageUrl={uploadedImage}
               selectedColor={selectedColor?.hexColor}
               onSelectionChange={setHasSelection}
+              onOpacityChange={setOpacity}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
@@ -123,6 +239,10 @@ export default function Home() {
         <div className="w-80 border-l bg-card flex-shrink-0">
           <PropertiesPanel 
             selectedColor={hasSelection ? selectedColor : null}
+            opacity={opacity}
+            blendMode={blendMode}
+            onOpacityChange={handleOpacityChange}
+            onBlendModeChange={handleBlendModeChange}
             onDownload={handleDownload}
             onSave={handleSave}
           />
@@ -132,11 +252,22 @@ export default function Home() {
       <ProjectGallery
         open={galleryOpen}
         onOpenChange={setGalleryOpen}
-        projects={mockProjects}
+        projects={galleryProjects}
         onProjectSelect={(project) => {
-          console.log('Load project:', project);
+          if (['1', '2', '3', '4'].includes(project.id)) {
+            setUploadedImage(project.thumbnail);
+            setProjectName(project.name);
+            setCurrentProjectId(null);
+          } else {
+            loadProject(project.id);
+          }
+          setGalleryOpen(false);
         }}
-        onProjectDelete={(id) => console.log('Delete project:', id)}
+        onProjectDelete={(id) => {
+          if (!['1', '2', '3', '4'].includes(id)) {
+            deleteProjectMutation.mutate(id);
+          }
+        }}
         onProjectDuplicate={(id) => console.log('Duplicate project:', id)}
       />
     </div>

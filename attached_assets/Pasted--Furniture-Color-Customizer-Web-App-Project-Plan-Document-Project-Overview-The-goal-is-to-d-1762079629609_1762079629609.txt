@@ -1,0 +1,131 @@
+🪑 Furniture Color Customizer Web App — Project Plan Document
+🧩 Project Overview
+The goal is to develop a web-based furniture customization application where:
+•	Users (clients/customers) can upload an image of a furniture item (sofa, chair, table, etc.).
+•	They can select different areas of the furniture (e.g., seat, legs, edges).
+•	They can change colors using the available company color palette.
+•	The system will apply those color changes visually on the uploaded image.
+•	Optionally: save, share, or submit the customized image for quotation or purchase.
+________________________________________
+🎯 Main Objectives
+1.	Allow users to upload high-resolution furniture images.
+2.	Provide an easy interface for selecting specific regions (using drawing tools or auto-detection).
+3.	Apply new color tones realistically (maintain shadows, texture).
+4.	Save or export the final preview for client use.
+5.	(Optional) Admin dashboard for color scheme management and furniture model uploads.
+________________________________________
+🧠 Recommended Tech Stack
+Layer	Technology	Reason
+Frontend (Web UI)	React.js or Next.js	Interactive, responsive UI; supports real-time rendering.
+Image Editing/Rendering	Fabric.js, Konva.js, or Three.js	Fabric.js for 2D color manipulation, Three.js for 3D furniture models.
+Backend	Python (Flask/Django) or Node.js (Express)	Handles uploads, API logic, image processing.
+AI/Image Processing	OpenCV, TensorFlow.js, or Python Pillow (PIL)	Detect image regions, apply color filters, maintain texture.
+Database	PostgreSQL or MongoDB	Store color palettes, furniture data, user preferences.
+Cloud Storage	AWS S3, Google Cloud Storage, or Cloudinary	Store uploaded and rendered images securely.
+Deployment	AWS / Render / Vercel / DigitalOcean	Reliable hosting with scalability.
+________________________________________
+🧩 App Features Breakdown
+🖼️ 1. Image Upload & Display
+•	User uploads furniture photo (JPG/PNG).
+•	App validates and previews it immediately.
+•	File stored in temporary cloud storage.
+🎨 2. Area Selection
+Options:
+•	Manual: User draws/marks areas using polygon or brush tool (via Fabric.js/Konva).
+•	Auto: Use OpenCV to detect object boundaries (edges, seats, cushions).
+🌈 3. Color Palette
+•	Company provides pre-defined color palette (hex/RGB values).
+•	User clicks to apply selected color to marked region.
+💡 4. Realistic Rendering
+•	Color overlay blended with furniture texture (via multiply/blend mode).
+•	Maintain lighting/shadows for realism.
+💾 5. Save/Download/Submit
+•	Save configuration to user profile.
+•	Download final preview image.
+•	Send for quote or purchase.
+🧑‍💼 6. Admin Dashboard (optional)
+•	Upload new furniture templates.
+•	Manage company color palettes.
+•	View customer customization requests.
+________________________________________
+🧮 Architecture Diagram (Conceptual)
+[User Browser]
+   │
+   ▼
+React.js Frontend → Fabric.js for color regions
+   │
+   ▼
+API Requests
+   │
+   ▼
+[Django/Node Backend] → Handles logic
+   │
+   ├──> Database (MongoDB/PostgreSQL)
+   │
+   ├──> Cloud Storage (AWS S3)
+   │
+   └──> Image Processor (OpenCV / Pillow)
+________________________________________
+🧱 Prerequisites Before Starting Development
+1.	Gather Requirements
+o	List all furniture categories.
+o	Define available color schemes.
+o	Confirm if the app should support 2D photo or 3D model.
+2.	Design UI Mockups
+o	Use Figma or Adobe XD to design the user flow:
+	Upload page
+	Color selection panel
+	Preview area
+	Save/Download page
+3.	Set Up Development Environment
+o	Choose tech stack (React + Django recommended).
+o	Set up GitHub repository and project folder structure.
+o	Create database schema.
+4.	Prepare Color Database
+o	Add company colors (hex/RGB).
+o	Store as records in DB.
+5.	Prepare Initial Furniture Models
+o	Upload sample furniture images.
+o	(Optional) Predefine regions manually for accuracy.
+6.	Set Up Backend APIs
+o	/upload-image
+o	/apply-color
+o	/get-palettes
+o	/save-customization
+7.	Integrate Frontend + Backend
+o	Connect via REST API or GraphQL.
+o	Test real-time color preview.
+8.	Testing & Optimization
+o	Test various image sizes, lighting, and color accuracy.
+o	Optimize image rendering speed.
+9.	Deployment
+o	Frontend → Vercel or Netlify.
+o	Backend → AWS/Render.
+o	Database → MongoDB Atlas or AWS RDS.
+o	Storage → AWS S3.
+________________________________________
+⚙️ Possible Advanced Features (Future Scope)
+•	3D furniture model rotation (Three.js + GLTF models).
+•	Automatic object segmentation (using ML models).
+•	AR preview (see furniture in real room via phone camera).
+•	Customer login and order history.
+•	Integration with eCommerce platform (Shopify, WooCommerce, etc.).
+________________________________________
+💡 Suggested Development Flow
+Phase	Task	Tools
+1	UI/UX design prototype	Figma
+2	React.js frontend with Fabric.js integration	React + Fabric.js
+3	Backend API setup	Django REST Framework
+4	Image color manipulation	Python Pillow/OpenCV
+5	Database setup	PostgreSQL
+6	Connect frontend to backend	Axios/Fetch
+7	Testing & bug fixing	Jest, Postman
+8	Deployment	Vercel + AWS
+________________________________________
+🧾 Example Color Change Workflow
+1.	User uploads chair.jpg.
+2.	App detects areas using OpenCV (seat, legs, arms).
+3.	User picks “Dark Brown” for legs and “Beige” for seat.
+4.	Backend overlays new colors using blending mode while preserving texture.
+5.	Output preview is displayed and can be saved as custom_chair_1.png.
+

@@ -16,16 +16,23 @@ import type { ColorItem } from "@/data/colorPalette";
 
 interface PropertiesPanelProps {
   selectedColor?: ColorItem | null;
-  onDownload?: () => void;
+  opacity?: number;
+  blendMode?: string;
+  onOpacityChange?: (opacity: number) => void;
+  onBlendModeChange?: (mode: string) => void;
+  onDownload?: (filename: string, format: string, scale: number) => void;
   onSave?: () => void;
 }
 
 export default function PropertiesPanel({ 
   selectedColor, 
+  opacity = 70,
+  blendMode = "multiply",
+  onOpacityChange,
+  onBlendModeChange,
   onDownload,
   onSave 
 }: PropertiesPanelProps) {
-  const [opacity, setOpacity] = useState([70]);
   const [fileName, setFileName] = useState("customized-furniture");
   const [format, setFormat] = useState("png");
   const [resolution, setResolution] = useState("1x");
@@ -68,13 +75,13 @@ export default function PropertiesPanel({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="opacity" className="text-xs text-muted-foreground">Opacity</Label>
-                <span className="text-xs font-mono">{opacity[0]}%</span>
+                <span className="text-xs font-mono">{Math.round(opacity)}%</span>
               </div>
               <Slider
                 id="opacity"
                 data-testid="slider-opacity"
-                value={opacity}
-                onValueChange={setOpacity}
+                value={[opacity]}
+                onValueChange={(val) => onOpacityChange?.(val[0])}
                 min={0}
                 max={100}
                 step={5}
@@ -83,7 +90,7 @@ export default function PropertiesPanel({
 
             <div className="space-y-2">
               <Label htmlFor="blend-mode" className="text-xs text-muted-foreground">Blend Mode</Label>
-              <Select defaultValue="multiply">
+              <Select value={blendMode} onValueChange={onBlendModeChange}>
                 <SelectTrigger id="blend-mode" data-testid="select-blend-mode">
                   <SelectValue />
                 </SelectTrigger>
@@ -141,7 +148,10 @@ export default function PropertiesPanel({
           <div className="pt-2 space-y-2">
             <Button 
               className="w-full" 
-              onClick={onDownload}
+              onClick={() => {
+                const scale = resolution === "1x" ? 1 : resolution === "2x" ? 2 : 4;
+                onDownload?.(fileName, format, scale);
+              }}
               data-testid="button-download"
             >
               <Download className="h-4 w-4 mr-2" />
