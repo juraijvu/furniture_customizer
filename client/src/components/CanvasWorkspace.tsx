@@ -1,323 +1,361 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
-import { Canvas, Rect, Circle as FabricCircle, Image, FabricObject } from "fabric";
-import { ZoomIn, ZoomOut, Move, Square, Circle, RotateCcw, Undo, Redo } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 interface CanvasWorkspaceProps {
   imageUrl?: string;
   selectedColor?: string;
-  onSelectionChange?: (hasSelection: boolean) => void;
-  onOpacityChange?: (opacity: number) => void;
+  imageId?: string;
   className?: string;
 }
 
-export interface CanvasWorkspaceHandle {
-  setOpacity: (opacity: number) => void;
-  setBlendMode: (mode: string) => void;
-  downloadImage: (filename: string, format: string, scale: number) => void;
-  getCanvasJSON: () => any;
-  loadCanvasJSON: (json: any) => void;
+interface ColoredMask {
+  id: string;
+  maskUrl: string;
+  color: string;
+  opacity: number;
+  clickX: number;
+  clickY: number;
 }
 
-function CanvasWorkspaceComponent({ 
+export function CanvasWorkspace({ 
   imageUrl, 
-  selectedColor, 
-  onSelectionChange,
-  onOpacityChange,
+  selectedColor = "#FF0000",
+  imageId,
   className 
-}: CanvasWorkspaceProps, ref: React.Ref<CanvasWorkspaceHandle>) {
+}: CanvasWorkspaceProps) {
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const baseImageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<Canvas | null>(null);
   const [zoom, setZoom] = useState(100);
-  const [activeTool, setActiveTool] = useState<'select' | 'rect' | 'circle'>('select');
-  const historyRef = useRef<string[]>([]);
-  const historyIndexRef = useRef<number>(-1);
+  const [masks, setMasks] = useState<ColoredMask[]>([]);
+  const [isSegmenting, setIsSegmenting] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const { toast } = useToast();
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (imageUrl && baseImageRef.current) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const container = canvasContainerRef.current;
+        if (!container) return;
 
-    const canvas = new Canvas(canvasRef.current, {
-      width: 800,
-      height: 600,
-      backgroundColor: '#f5f5f5',
-    });
-
-    fabricCanvasRef.current = canvas;
-
-    if (imageUrl) {
-      Image.fromURL(imageUrl, {
-        crossOrigin: 'anonymous'
-      }).then((img: any) => {
+        const containerWidth = container.clientWidth || 800;
+        const containerHeight = container.clientHeight || 600;
+        
         const scale = Math.min(
-          canvas.width! / (img.width || 1),
-          canvas.height! / (img.height || 1)
-        ) * 0.8;
-        
-        img.scale(scale);
-        img.set({
-          left: (canvas.width! - (img.width || 0) * scale) / 2,
-          top: (canvas.height! - (img.height || 0) * scale) / 2,
-          selectable: false,
-          evented: false,
+          containerWidth / img.width,
+          containerHeight / img.height,
+          1
+        ) * 0.9;
+
+        const displayWidth = img.width * scale;
+        const displayHeight = img.height * scale;
+
+        setImageDimensions({
+          width: displayWidth,
+          height: displayHeight
         });
+
+        if (baseImageRef.current) {
+          baseImageRef.current.src = img.src;
+        }
         
-        canvas.add(img);
-        canvas.sendObjectToBack(img);
-        canvas.renderAll();
-        saveHistory();
-      }).catch((error) => {
-        console.error('Error loading image:', error);
-      });
-    } else {
-      setTimeout(() => saveHistory(), 0);
+        setImageLoaded(true);
+        renderCanvas();
+      };
+      img.onerror = () => {
+        toast({
+          title: "Error",
+          description: "Failed to load image",
+          variant: "destructive"
+        });
+      };
+      img.src = imageUrl;
     }
+  }, [imageUrl, toast]);
 
-    canvas.on('selection:created', (e) => {
-      onSelectionChange?.(true);
-      const obj = e.selected?.[0];
-      if (obj && obj.type !== 'image') {
-        onOpacityChange?.((obj.opacity || 1) * 100);
-      }
-    });
-    
-    canvas.on('selection:updated', (e) => {
-      const obj = e.selected?.[0];
-      if (obj && obj.type !== 'image') {
-        onOpacityChange?.((obj.opacity || 1) * 100);
-      }
-    });
-    
-    canvas.on('selection:cleared', () => onSelectionChange?.(false));
-    canvas.on('object:modified', () => saveHistory());
+  const renderCanvas = () => {
+    const canvas = canvasRef.current;
+    const baseImage = baseImageRef.current;
+    if (!canvas || !baseImage || !imageLoaded) return;
 
-    return () => {
-      canvas.dispose();
-    };
-  }, [imageUrl, onSelectionChange]);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = imageDimensions.width;
+    canvas.height = imageDimensions.height;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    masks.forEach(mask => {
+      const maskImg = new Image();
+      maskImg.crossOrigin = "anonymous";
+      maskImg.onload = () => {
+        ctx.save();
+        ctx.globalAlpha = mask.opacity;
+        ctx.globalCompositeOperation = 'multiply';
+        
+        ctx.fillStyle = mask.color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
+        
+        ctx.restore();
+      };
+      maskImg.src = mask.maskUrl;
+    });
+  };
 
   useEffect(() => {
-    if (!fabricCanvasRef.current || !selectedColor) return;
-    
-    const activeObject = fabricCanvasRef.current.getActiveObject();
-    if (activeObject && activeObject.type !== 'image') {
-      activeObject.set({ fill: selectedColor });
-      fabricCanvasRef.current.renderAll();
-      setTimeout(() => saveHistory(), 0);
+    renderCanvas();
+  }, [masks, imageDimensions, imageLoaded]);
+
+  const handleCanvasClick = async (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!imageUrl || isSegmenting) return;
+
+    const rect = canvasContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const scaleX = imageDimensions.width > 0 ? baseImageRef.current!.naturalWidth / imageDimensions.width : 1;
+    const scaleY = imageDimensions.height > 0 ? baseImageRef.current!.naturalHeight / imageDimensions.height : 1;
+
+    const actualX = Math.round(x * scaleX);
+    const actualY = Math.round(y * scaleY);
+
+    setIsSegmenting(true);
+
+    try {
+      const response = await apiRequest('POST', `/api/segment`, {
+        imageUrl,
+        clickX: actualX,
+        clickY: actualY,
+        imageId: imageId || undefined
+      });
+
+      const data = await response.json();
+
+      const newMask: ColoredMask = {
+        id: crypto.randomUUID(),
+        maskUrl: data.maskUrl,
+        color: selectedColor,
+        opacity: 0.7,
+        clickX: actualX,
+        clickY: actualY
+      };
+
+      setMasks(prev => [...prev, newMask]);
+
+      toast({
+        title: "Part detected!",
+        description: "Click detected furniture part. You can now change colors or click another part.",
+      });
+
+    } catch (error) {
+      console.error('Segmentation error:', error);
+      toast({
+        title: "Segmentation failed",
+        description: error instanceof Error ? error.message : "Failed to detect furniture part. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSegmenting(false);
+    }
+  };
+
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 10, 200));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 10, 50));
+  };
+
+  const handleReset = () => {
+    setZoom(100);
+    setMasks([]);
+  };
+
+  const handleDownload = () => {
+    const canvas = canvasRef.current;
+    const baseImage = baseImageRef.current;
+    if (!canvas || !baseImage) return;
+
+    const downloadCanvas = document.createElement('canvas');
+    downloadCanvas.width = baseImage.naturalWidth;
+    downloadCanvas.height = baseImage.naturalHeight;
+    const ctx = downloadCanvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(baseImage, 0, 0);
+
+    masks.forEach(mask => {
+      const maskImg = new Image();
+      maskImg.crossOrigin = "anonymous";
+      maskImg.onload = () => {
+        ctx.save();
+        ctx.globalAlpha = mask.opacity;
+        ctx.globalCompositeOperation = 'multiply';
+        
+        ctx.fillStyle = mask.color;
+        ctx.fillRect(0, 0, downloadCanvas.width, downloadCanvas.height);
+        
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(maskImg, 0, 0, downloadCanvas.width, downloadCanvas.height);
+        
+        ctx.restore();
+      };
+      maskImg.src = mask.maskUrl;
+    });
+
+    setTimeout(() => {
+      downloadCanvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'customized-furniture.png';
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      });
+    }, 500);
+  };
+
+  const handleUpdateLastMaskColor = () => {
+    if (masks.length === 0) return;
+
+    setMasks(prev => {
+      const updated = [...prev];
+      updated[updated.length - 1] = {
+        ...updated[updated.length - 1],
+        color: selectedColor
+      };
+      return updated;
+    });
+  };
+
+  useEffect(() => {
+    if (selectedColor && masks.length > 0) {
+      handleUpdateLastMaskColor();
     }
   }, [selectedColor]);
 
-  useImperativeHandle(ref, () => ({
-    setOpacity: (opacity: number) => {
-      if (!fabricCanvasRef.current) return;
-      const activeObject = fabricCanvasRef.current.getActiveObject();
-      if (activeObject && activeObject.type !== 'image') {
-        activeObject.set({ opacity: opacity / 100 });
-        fabricCanvasRef.current.renderAll();
-        setTimeout(() => saveHistory(), 0);
-      }
-    },
-    setBlendMode: (mode: string) => {
-      if (!fabricCanvasRef.current) return;
-      const activeObject = fabricCanvasRef.current.getActiveObject() as any;
-      if (activeObject && activeObject.type !== 'image') {
-        activeObject.set({ globalCompositeOperation: mode });
-        fabricCanvasRef.current.renderAll();
-        setTimeout(() => saveHistory(), 0);
-      }
-    },
-    downloadImage: (filename: string, format: string, scale: number) => {
-      if (!fabricCanvasRef.current) return;
-      const dataURL = fabricCanvasRef.current.toDataURL({
-        format: format === 'jpg' ? 'jpeg' : 'png',
-        quality: 1,
-        multiplier: scale
-      });
-      const link = document.createElement('a');
-      link.download = `${filename}.${format}`;
-      link.href = dataURL;
-      link.click();
-    },
-    getCanvasJSON: () => {
-      if (!fabricCanvasRef.current) return null;
-      return fabricCanvasRef.current.toJSON();
-    },
-    loadCanvasJSON: (json: any) => {
-      if (!fabricCanvasRef.current) return;
-      fabricCanvasRef.current.loadFromJSON(json, () => {
-        fabricCanvasRef.current?.renderAll();
-      });
-    }
-  }));
-
-  const saveHistory = () => {
-    if (!fabricCanvasRef.current) return;
-    const json = JSON.stringify(fabricCanvasRef.current.toJSON());
-    historyIndexRef.current++;
-    historyRef.current = historyRef.current.slice(0, historyIndexRef.current);
-    historyRef.current.push(json);
-    if (historyRef.current.length > 50) {
-      historyRef.current.shift();
-      historyIndexRef.current--;
-    }
-  };
-
-  const undo = () => {
-    if (!fabricCanvasRef.current || historyIndexRef.current <= 0) return;
-    historyIndexRef.current--;
-    const json = historyRef.current[historyIndexRef.current];
-    fabricCanvasRef.current.loadFromJSON(JSON.parse(json), () => {
-      fabricCanvasRef.current?.renderAll();
-    });
-  };
-
-  const redo = () => {
-    if (!fabricCanvasRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
-    historyIndexRef.current++;
-    const json = historyRef.current[historyIndexRef.current];
-    fabricCanvasRef.current.loadFromJSON(JSON.parse(json), () => {
-      fabricCanvasRef.current?.renderAll();
-    });
-  };
-
-  const handleZoomChange = (value: number[]) => {
-    const newZoom = value[0];
-    setZoom(newZoom);
-    if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.setZoom(newZoom / 100);
-      fabricCanvasRef.current.renderAll();
-    }
-  };
-
-  const addRectangle = () => {
-    if (!fabricCanvasRef.current) return;
-    const rect = new Rect({
-      left: 100,
-      top: 100,
-      fill: selectedColor || '#C0C0C0',
-      width: 150,
-      height: 100,
-      opacity: 0.7,
-      stroke: 'rgba(0,0,0,0.2)',
-      strokeWidth: 1,
-    }) as any;
-    rect.globalCompositeOperation = 'multiply';
-    fabricCanvasRef.current.add(rect);
-    fabricCanvasRef.current.setActiveObject(rect);
-    fabricCanvasRef.current.renderAll();
-    setActiveTool('select');
-    setTimeout(() => saveHistory(), 0);
-  };
-
-  const addCircle = () => {
-    if (!fabricCanvasRef.current) return;
-    const circle = new FabricCircle({
-      left: 200,
-      top: 200,
-      fill: selectedColor || '#C0C0C0',
-      radius: 50,
-      opacity: 0.7,
-      stroke: 'rgba(0,0,0,0.2)',
-      strokeWidth: 1,
-    }) as any;
-    circle.globalCompositeOperation = 'multiply';
-    fabricCanvasRef.current.add(circle);
-    fabricCanvasRef.current.setActiveObject(circle);
-    fabricCanvasRef.current.renderAll();
-    setActiveTool('select');
-    setTimeout(() => saveHistory(), 0);
-  };
-
-  const resetCanvas = () => {
-    if (!fabricCanvasRef.current) return;
-    const objects = fabricCanvasRef.current.getObjects();
-    objects.forEach((obj: any) => {
-      if (obj.type !== 'image') {
-        fabricCanvasRef.current!.remove(obj);
-      }
-    });
-    fabricCanvasRef.current.renderAll();
-    setTimeout(() => saveHistory(), 0);
-  };
-
   return (
-    <div className={cn("flex flex-col h-full bg-muted/30", className)}>
-      <div className="flex items-center justify-between p-3 border-b bg-background">
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            variant={activeTool === 'rect' ? 'default' : 'ghost'}
-            onClick={addRectangle}
-            data-testid="button-add-rectangle"
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant={activeTool === 'circle' ? 'default' : 'ghost'}
-            onClick={addCircle}
-            data-testid="button-add-circle"
-          >
-            <Circle className="h-4 w-4" />
-          </Button>
-          <div className="w-px h-6 bg-border mx-1" />
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            onClick={undo}
-            disabled={historyIndexRef.current <= 0}
-            data-testid="button-undo"
-          >
-            <Undo className="h-4 w-4" />
-          </Button>
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            onClick={redo}
-            disabled={historyIndexRef.current >= historyRef.current.length - 1}
-            data-testid="button-redo"
-          >
-            <Redo className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={resetCanvas} data-testid="button-reset">
-            <RotateCcw className="h-4 w-4" />
-          </Button>
+    <div className={cn("flex flex-col h-full", className)}>
+      <div className="flex items-center gap-2 p-4 border-b bg-background">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleZoomOut}
+          disabled={zoom <= 50}
+          data-testid="button-zoom-out"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        <div className="flex items-center gap-2 min-w-[120px]">
+          <Slider
+            value={[zoom]}
+            onValueChange={(value) => setZoom(value[0])}
+            min={50}
+            max={200}
+            step={10}
+            className="flex-1"
+            data-testid="slider-zoom"
+          />
+          <span className="text-sm font-medium w-12 text-right" data-testid="text-zoom-level">{zoom}%</span>
         </div>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleZoomIn}
+          disabled={zoom >= 200}
+          data-testid="button-zoom-in"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </Button>
+        <div className="flex-1" />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleReset}
+          data-testid="button-reset"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleDownload}
+          disabled={!imageLoaded}
+          data-testid="button-download"
+        >
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <Button size="icon" variant="ghost" onClick={() => handleZoomChange([Math.max(25, zoom - 25)])} data-testid="button-zoom-out">
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <div className="flex items-center gap-2 w-32">
-            <Slider
-              value={[zoom]}
-              onValueChange={handleZoomChange}
-              min={25}
-              max={200}
-              step={25}
-              data-testid="slider-zoom"
-            />
-            <span className="text-xs font-mono w-12 text-right">{zoom}%</span>
+      <div 
+        ref={canvasContainerRef}
+        className="flex-1 relative overflow-auto bg-gray-100 dark:bg-gray-900 flex items-center justify-center"
+        data-testid="canvas-container"
+      >
+        {!imageUrl && (
+          <div className="text-center text-muted-foreground" data-testid="text-no-image">
+            <p>Upload an image to get started</p>
           </div>
-          <Button size="icon" variant="ghost" onClick={() => handleZoomChange([Math.min(200, zoom + 25)])} data-testid="button-zoom-in">
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-        </div>
+        )}
+        
+        {imageUrl && (
+          <div 
+            className="relative cursor-crosshair"
+            style={{
+              width: `${imageDimensions.width}px`,
+              height: `${imageDimensions.height}px`,
+              transform: `scale(${zoom / 100})`,
+              transformOrigin: 'center center'
+            }}
+            onClick={handleCanvasClick}
+            data-testid="canvas-clickable-area"
+          >
+            <img
+              ref={baseImageRef}
+              alt="Furniture"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+              draggable={false}
+              data-testid="img-base-furniture"
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 pointer-events-none"
+              data-testid="canvas-overlay"
+            />
+            {isSegmenting && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm" data-testid="loading-segmentation">
+                <div className="bg-background p-4 rounded-lg shadow-lg flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="font-medium">Detecting furniture part...</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-        <div className="relative rounded-lg border-2 bg-white shadow-lg" style={{ 
-          backgroundImage: 'repeating-conic-gradient(#f0f0f0 0% 25%, transparent 0% 50%) 50% / 20px 20px'
-        }}>
-          <canvas ref={canvasRef} data-testid="canvas-workspace" />
+      {masks.length > 0 && (
+        <div className="p-2 border-t bg-background text-sm text-muted-foreground" data-testid="text-masks-count">
+          {masks.length} part{masks.length !== 1 ? 's' : ''} colored
         </div>
-      </div>
+      )}
     </div>
   );
 }
-
-const CanvasWorkspace = forwardRef(CanvasWorkspaceComponent);
-CanvasWorkspace.displayName = 'CanvasWorkspace';
-
-export default CanvasWorkspace;

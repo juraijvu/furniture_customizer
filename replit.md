@@ -13,14 +13,18 @@ A web-based furniture customization application that allows users to upload furn
 
 ## Recent Changes
 
-**November 2, 2025 - Fabric.js v6 Migration & Bug Fixes:**
-- Fixed Fabric.js v6 API compatibility issue with `sendToBack()` method - now using `canvas.sendObjectToBack(img)`
-- Resolved color application error - colors now properly update when selected from the palette
-- Fixed undo/redo history management - history now works from blank canvas and after reset operations
-- Enhanced shape creation with stroke borders for better visibility
-- Improved color application logic with proper object syntax
-- Set default blend mode to 'multiply' for realistic color overlay that preserves furniture textures and shadows
-- Updated browserslist database to latest version
+**November 2, 2025 - AI-Powered Click-to-Color Redesign:**
+- **MAJOR REDESIGN**: Replaced manual drawing tools with AI-powered automatic furniture part detection
+- Integrated Replicate API with Meta's Segment Anything Model 2 (SAM 2) for intelligent image segmentation
+- New interaction model: Users simply click on any furniture part to automatically detect and color it
+- Removed Fabric.js dependency and manual shape drawing (rectangle, circle tools)
+- Implemented HTML5 Canvas with mask overlay system for precise color application
+- Added real-time segmentation with loading states and error handling
+- Backend: New `/api/segment` endpoint processes click coordinates and returns AI-detected masks
+- Database schema updated: New tables for `segmentationMasks` and `colorApplications`
+- User-friendly workflow: Upload → Click any part → Color is automatically applied
+- No Photoshop skills required - perfect for non-technical users
+- Cost-effective: ~$0.013 per segmentation (~76 clicks per $1)
 
 ## User Preferences
 
@@ -39,10 +43,11 @@ Preferred communication style: Simple, everyday language.
 - Component library includes: dialogs, buttons, forms, cards, tooltips, and specialized UI elements
 
 **Canvas/Image Editing:**
-- Fabric.js for 2D color manipulation and region selection
-- Canvas-based workspace for real-time furniture customization
-- Tools: selection, rectangle drawing, circle drawing, zoom controls
-- Undo/redo functionality with history management
+- HTML5 Canvas for mask overlay and color rendering
+- AI-powered image segmentation via Replicate API (Meta SAM 2)
+- Click-based interaction: automatic furniture part detection on click
+- Real-time color blending with multiply composite operation
+- Zoom controls and download functionality
 
 **State Management:**
 - React Query (TanStack Query) for server state and data fetching
@@ -98,13 +103,17 @@ Preferred communication style: Simple, everyday language.
    - Dimensions: width, height
    - Cascade delete on project removal
 
-3. **colorRegions** - Canvas objects with applied colors
-   - id, projectId (FK), name, fabricObject (JSONB)
-   - fillHex for color tracking
-   - Serialized Fabric.js object storage
+3. **segmentationMasks** - AI-detected furniture parts
+   - id, imageId (FK), clickX, clickY
+   - maskData (base64 PNG), boundingBox (JSONB)
+   - Stores SAM 2 generated masks for each click
+   - Cascade delete on image removal
 
-4. **canvasStates** - Canvas state snapshots
-   - For save/restore functionality
+4. **colorApplications** - Applied colors to segmented parts
+   - id, projectId (FK), maskId (FK)
+   - fillHex, opacity, blendMode
+   - Links colors to specific detected furniture parts
+   - Cascade delete on project removal
 
 5. **recentColors** - User's recent color selections
    - For quick color access in UI
@@ -122,11 +131,15 @@ Preferred communication style: Simple, everyday language.
 
 **UI Libraries:**
 - @radix-ui/* - Accessible component primitives (accordion, dialog, dropdown, select, etc.)
-- fabric - Canvas manipulation and 2D graphics
 - cmdk - Command palette component
 - embla-carousel-react - Carousel functionality
 - react-day-picker - Calendar/date selection
 - lucide-react - Icon library
+
+**AI/ML Services:**
+- replicate - Node.js client for Replicate API
+- Meta SAM 2 (Segment Anything Model 2) - AI-powered image segmentation
+- Real-time furniture part detection from click coordinates
 
 **Form Handling:**
 - react-hook-form - Form state management

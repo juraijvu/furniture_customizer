@@ -1,8 +1,8 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import Header from "@/components/Header";
 import ColorPalette from "@/components/ColorPalette";
 import UploadZone from "@/components/UploadZone";
-import CanvasWorkspace, { type CanvasWorkspaceHandle } from "@/components/CanvasWorkspace";
+import { CanvasWorkspace } from "@/components/CanvasWorkspace";
 import PropertiesPanel from "@/components/PropertiesPanel";
 import ProjectGallery from "@/components/ProjectGallery";
 import type { ColorItem } from "@/data/colorPalette";
@@ -16,13 +16,10 @@ export default function Home() {
   const [projectName, setProjectName] = useState("Untitled Project");
   const [selectedColor, setSelectedColor] = useState<ColorItem | null>(null);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImageId, setUploadedImageId] = useState<string | null>(null);
   const [recentColors, setRecentColors] = useState<ColorItem[]>([]);
-  const [hasSelection, setHasSelection] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [opacity, setOpacity] = useState(70);
-  const [blendMode, setBlendMode] = useState("multiply");
-  const canvasRef = useRef<CanvasWorkspaceHandle>(null);
   const queryClient = useQueryClient();
 
   const handleColorSelect = (color: ColorItem) => {
@@ -34,13 +31,56 @@ export default function Home() {
     });
   };
 
-  const handleImageUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setUploadedImage(e.target?.result as string);
-      setProjectName(file.name.replace(/\.[^/.]+$/, ""));
-    };
-    reader.readAsDataURL(file);
+  const handleImageUpload = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const data = await response.json();
+      
+      const projectToUse = currentProjectId ? currentProjectId : (await createProjectMutation.mutateAsync({
+        name: file.name.replace(/\.[^/.]+$/, ""),
+        previewImageUrl: data.path
+      })).id;
+      
+      if (!currentProjectId) {
+        setCurrentProjectId(projectToUse);
+      }
+      
+      const img = new Image();
+      img.onload = async () => {
+        const imageRecord = await fetch(`/api/projects/${projectToUse}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: projectToUse,
+            originalImagePath: data.path,
+            mimeType: data.mimetype,
+            width: img.naturalWidth,
+            height: img.naturalHeight
+          })
+        });
+        
+        if (imageRecord.ok) {
+          const imageData = await imageRecord.json();
+          setUploadedImageId(imageData.id);
+          setUploadedImage(data.fullUrl);
+          setProjectName(file.name.replace(/\.[^/.]+$/, ""));
+        }
+      };
+      img.src = data.fullUrl;
+    } catch (error) {
+      console.error('Upload error:', error);
+    }
   };
 
   const { data: projects } = useQuery({
@@ -65,18 +105,6 @@ export default function Home() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/projects'] })
   });
 
-  const saveCanvasMutation = useMutation({
-    mutationFn: async ({ projectId, canvasJson, zoom }: { projectId: string; canvasJson: any; zoom: number }) => {
-      const response = await fetch(`/api/projects/${projectId}/canvas`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ canvasJson, zoom })
-      });
-      if (!response.ok) throw new Error('Failed to save canvas');
-      return response.json();
-    }
-  });
-
   const deleteProjectMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
@@ -99,30 +127,14 @@ export default function Home() {
         if (data.project.previewImageUrl) {
           setUploadedImage(data.project.previewImageUrl);
         }
-        
-        if (data.canvasState?.canvasJson) {
-          setTimeout(() => {
-            canvasRef.current?.loadCanvasJSON(data.canvasState.canvasJson);
-          }, 100);
-        }
       }
     } catch (error) {
       console.error('Failed to load project:', error);
     }
   };
 
-  const handleOpacityChange = (newOpacity: number) => {
-    setOpacity(newOpacity);
-    canvasRef.current?.setOpacity(newOpacity);
-  };
-
-  const handleBlendModeChange = (mode: string) => {
-    setBlendMode(mode);
-    canvasRef.current?.setBlendMode(mode);
-  };
-
-  const handleDownload = (filename: string, format: string, scale: number) => {
-    canvasRef.current?.downloadImage(filename, format, scale);
+  const handleDownload = () => {
+    console.log('Download triggered');
   };
 
   const handleSave = async () => {
@@ -132,24 +144,6 @@ export default function Home() {
         previewImageUrl: uploadedImage || undefined
       });
       setCurrentProjectId(project.id);
-      
-      const canvasJson = canvasRef.current?.getCanvasJSON();
-      if (canvasJson) {
-        await saveCanvasMutation.mutateAsync({
-          projectId: project.id,
-          canvasJson,
-          zoom: 1
-        });
-      }
-    } else {
-      const canvasJson = canvasRef.current?.getCanvasJSON();
-      if (canvasJson) {
-        await saveCanvasMutation.mutateAsync({
-          projectId: currentProjectId,
-          canvasJson,
-          zoom: 1
-        });
-      }
     }
   };
 
@@ -186,11 +180,9 @@ export default function Home() {
         <div className="flex-1 flex flex-col min-w-0">
           {uploadedImage ? (
             <CanvasWorkspace 
-              ref={canvasRef}
               imageUrl={uploadedImage}
               selectedColor={selectedColor?.hexColor}
-              onSelectionChange={setHasSelection}
-              onOpacityChange={setOpacity}
+              imageId={uploadedImageId || undefined}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
@@ -213,6 +205,8 @@ export default function Home() {
                         onClick={() => {
                           setUploadedImage(example.img);
                           setProjectName(example.name);
+                          setUploadedImageId(null);
+                          setCurrentProjectId(null);
                         }}
                         className="group flex flex-col gap-2 p-3 rounded-lg border bg-card hover-elevate active-elevate-2"
                         data-testid={`button-example-${idx}`}
@@ -238,11 +232,11 @@ export default function Home() {
 
         <div className="w-80 border-l bg-card flex-shrink-0">
           <PropertiesPanel 
-            selectedColor={hasSelection ? selectedColor : null}
-            opacity={opacity}
-            blendMode={blendMode}
-            onOpacityChange={handleOpacityChange}
-            onBlendModeChange={handleBlendModeChange}
+            selectedColor={selectedColor}
+            opacity={70}
+            blendMode="multiply"
+            onOpacityChange={() => {}}
+            onBlendModeChange={() => {}}
             onDownload={handleDownload}
             onSave={handleSave}
           />
