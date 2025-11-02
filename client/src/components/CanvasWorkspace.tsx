@@ -47,7 +47,9 @@ function CanvasWorkspaceComponent({
     fabricCanvasRef.current = canvas;
 
     if (imageUrl) {
-      Image.fromURL(imageUrl).then((img: any) => {
+      Image.fromURL(imageUrl, {
+        crossOrigin: 'anonymous'
+      }).then((img: any) => {
         const scale = Math.min(
           canvas.width! / (img.width || 1),
           canvas.height! / (img.height || 1)
@@ -58,10 +60,15 @@ function CanvasWorkspaceComponent({
           left: (canvas.width! - (img.width || 0) * scale) / 2,
           top: (canvas.height! - (img.height || 0) * scale) / 2,
           selectable: false,
+          evented: false,
         });
         
         canvas.add(img);
-        img.sendToBack();
+        canvas.sendObjectToBack(img);
+        canvas.renderAll();
+        saveHistory();
+      }).catch((error) => {
+        console.error('Error loading image:', error);
       });
     }
 
@@ -72,9 +79,16 @@ function CanvasWorkspaceComponent({
         onOpacityChange?.((obj.opacity || 1) * 100);
       }
     });
+    
+    canvas.on('selection:updated', (e) => {
+      const obj = e.selected?.[0];
+      if (obj && obj.type !== 'image') {
+        onOpacityChange?.((obj.opacity || 1) * 100);
+      }
+    });
+    
     canvas.on('selection:cleared', () => onSelectionChange?.(false));
     canvas.on('object:modified', () => saveHistory());
-    canvas.on('object:added', () => saveHistory());
 
     return () => {
       canvas.dispose();
@@ -183,12 +197,15 @@ function CanvasWorkspaceComponent({
       width: 150,
       height: 100,
       opacity: 0.7,
+      stroke: 'rgba(0,0,0,0.2)',
+      strokeWidth: 1,
     }) as any;
     rect.globalCompositeOperation = 'multiply';
     fabricCanvasRef.current.add(rect);
     fabricCanvasRef.current.setActiveObject(rect);
+    fabricCanvasRef.current.renderAll();
     setActiveTool('select');
-    saveHistory();
+    setTimeout(() => saveHistory(), 0);
   };
 
   const addCircle = () => {
@@ -199,12 +216,15 @@ function CanvasWorkspaceComponent({
       fill: selectedColor || '#C0C0C0',
       radius: 50,
       opacity: 0.7,
+      stroke: 'rgba(0,0,0,0.2)',
+      strokeWidth: 1,
     }) as any;
     circle.globalCompositeOperation = 'multiply';
     fabricCanvasRef.current.add(circle);
     fabricCanvasRef.current.setActiveObject(circle);
+    fabricCanvasRef.current.renderAll();
     setActiveTool('select');
-    saveHistory();
+    setTimeout(() => saveHistory(), 0);
   };
 
   const resetCanvas = () => {
