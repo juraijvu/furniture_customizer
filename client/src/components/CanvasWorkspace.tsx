@@ -100,9 +100,9 @@ function CanvasWorkspaceComponent({
     
     const activeObject = fabricCanvasRef.current.getActiveObject();
     if (activeObject && activeObject.type !== 'image') {
-      activeObject.set('fill', selectedColor);
+      activeObject.set({ fill: selectedColor });
       fabricCanvasRef.current.renderAll();
-      saveHistory();
+      setTimeout(() => saveHistory(), 0);
     }
   }, [selectedColor]);
 
@@ -111,18 +111,18 @@ function CanvasWorkspaceComponent({
       if (!fabricCanvasRef.current) return;
       const activeObject = fabricCanvasRef.current.getActiveObject();
       if (activeObject && activeObject.type !== 'image') {
-        activeObject.set('opacity', opacity / 100);
+        activeObject.set({ opacity: opacity / 100 });
         fabricCanvasRef.current.renderAll();
-        saveHistory();
+        setTimeout(() => saveHistory(), 0);
       }
     },
     setBlendMode: (mode: string) => {
       if (!fabricCanvasRef.current) return;
       const activeObject = fabricCanvasRef.current.getActiveObject() as any;
       if (activeObject && activeObject.type !== 'image') {
-        activeObject.set('globalCompositeOperation', mode);
+        activeObject.set({ globalCompositeOperation: mode });
         fabricCanvasRef.current.renderAll();
-        saveHistory();
+        setTimeout(() => saveHistory(), 0);
       }
     },
     downloadImage: (filename: string, format: string, scale: number) => {
