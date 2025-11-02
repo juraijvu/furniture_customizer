@@ -70,6 +70,8 @@ function CanvasWorkspaceComponent({
       }).catch((error) => {
         console.error('Error loading image:', error);
       });
+    } else {
+      setTimeout(() => saveHistory(), 0);
     }
 
     canvas.on('selection:created', (e) => {
@@ -235,6 +237,8 @@ function CanvasWorkspaceComponent({
         fabricCanvasRef.current!.remove(obj);
       }
     });
+    fabricCanvasRef.current.renderAll();
+    setTimeout(() => saveHistory(), 0);
   };
 
   return (
