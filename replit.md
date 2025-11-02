@@ -11,6 +11,17 @@ A web-based furniture customization application that allows users to upload furn
 - Realistic color blending with texture preservation
 - Save/download/submit customizations for quotation
 
+## Recent Changes
+
+**November 2, 2025 - Fabric.js v6 Migration & Bug Fixes:**
+- Fixed Fabric.js v6 API compatibility issue with `sendToBack()` method - now using `canvas.sendObjectToBack(img)`
+- Resolved color application error - colors now properly update when selected from the palette
+- Fixed undo/redo history management - history now works from blank canvas and after reset operations
+- Enhanced shape creation with stroke borders for better visibility
+- Improved color application logic with proper object syntax
+- Set default blend mode to 'multiply' for realistic color overlay that preserves furniture textures and shadows
+- Updated browserslist database to latest version
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
